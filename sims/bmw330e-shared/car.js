@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import {buildBody, DIM} from './body.js';
 import {CAR, ICE, BAT, FUEL, pinHeight, crankPin, phase, liftIn, liftEx, strokeOf} from './drive.js';
+import {addBodyDetails, roundelMaterial} from './details.js';
 import {C, clamp, cyl, D2R, edged, gearGeo, glassy, glow, lathe, lerp, mesh, rbox, rod, std, TAU, tube, V3} from './kit3d.js';
 
 export const SYSTEMS = [
@@ -78,41 +79,42 @@ export function buildCar() {
       const left = id.endsWith('L');
       if (id === 'doorFL' || id === 'doorFR') {
         const s = left ? 1 : -1;
-        const mir = mesh(rbox(0.1, 0.07, 0.14, 0.02), paintMat(), s * 0.99, 1.0, 0.5);
-        mir.rotation.y = s * -0.2;
+        const mir = new THREE.Group();
+        mir.add(mesh(rbox(0.11, 0.072, 0.17, 0.03, 3), paintMat(), 0, 0, 0));
+        mir.add(mesh(rbox(0.09, 0.03, 0.06, 0.012), std('#17181a', 0.2, 0.6), -s * 0.02, -0.03, -0.095));
+        const base = mesh(rbox(0.12, 0.03, 0.09, 0.012), std('#17181a', 0.2, 0.6), -s * 0.075, -0.035, 0.0);
+        mir.add(base);
+        mir.position.set(s * 0.97, 0.99, 0.62);
+        mir.rotation.y = s * -0.12;
         g.add(mir);
-      }
-      if (id === 'bumperF') {
-        for (const s of [-1, 1]) {
-          g.add(mesh(rbox(0.15, 0.115, 0.04, 0.02), std('#0e0f11', 0.5, 0.3), s * 0.105, 0.5, 2.218));
-          const fr = mesh(rbox(0.17, 0.13, 0.03, 0.02), std('#c9ced3', 0.9, 0.2), s * 0.105, 0.5, 2.205);
-          g.add(fr);
-          const lamp = mesh(rbox(0.34, 0.045, 0.05, 0.02), glow('#f3f6ff'), s * 0.62, 0.7, 2.15);
-          lamp.rotation.y = s * 0.55;
-          g.add(lamp);
-        }
-      }
-      if (id === 'bumperR') {
-        for (const s of [-1, 1]) {
-          const lamp = mesh(rbox(0.32, 0.06, 0.04, 0.02), glow('#c3202c'), s * 0.62, 0.86, -2.33);
-          lamp.rotation.y = s * -0.35;
-          g.add(lamp);
-        }
       }
     });
   }
-  // wheel arch liners stay with the shell
-  parts.find((p) => p.id === 'tub').obj.add(
-    ...[body.arches[0], body.arches[1]].flatMap((a) =>
-      [-1, 1].map((s) => {
-        const g = new THREE.CylinderGeometry(a.R + 0.012, a.R + 0.012, 0.3, 40, 1, true, -Math.PI / 2, Math.PI);
-        g.rotateZ(Math.PI / 2);
-        const m = mesh(g, new THREE.MeshStandardMaterial({color: '#17181a', roughness: 0.9, side: THREE.DoubleSide}), s * 0.7, body.archY, a.z);
-        m.rotation.y = 0;
-        return m;
-      }),
-    ),
-  );
+  // undertrays close the open underside at the nose and the tail
+  for (const [id, z0, z1] of [['bumperF', 1.8, 2.235], ['bumperR', -2.398, -1.75]]) {
+    const tray = mesh(rbox(1.2, 0.012, z1 - z0, 0.004), new THREE.MeshStandardMaterial({color: '#17181a', roughness: 0.8}), 0, id === 'bumperF' ? 0.285 : 0.295, (z0 + z1) / 2);
+    parts.find((p) => p.id === id).obj.add(tray);
+  }
+  // wheel arch liners stay with the shell: a half-cylinder over each wheel, open to the road
+  {
+    const liner = (R, w) => {
+      const pos = [];
+      const idx = [];
+      const N = 28;
+      for (let i = 0; i <= N; i++) {
+        const f = (i / N) * Math.PI;
+        for (const x of [-w / 2, w / 2]) pos.push(x, R * Math.sin(f), R * Math.cos(f));
+        if (i) idx.push((i - 1) * 2, i * 2, (i - 1) * 2 + 1, (i - 1) * 2 + 1, i * 2, i * 2 + 1);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      return g;
+    };
+    const lm = () => new THREE.MeshStandardMaterial({color: '#17181a', roughness: 0.9, side: THREE.DoubleSide});
+    for (const a of body.arches) for (const s of [-1, 1]) parts.find((p) => p.id === 'tub').obj.add(mesh(liner(a.R + 0.012, 0.3), lm(), s * 0.74, body.archY, a.z));
+  }
 
   // ============================================================ cabin
   const seatMat = () => std('#2a2b2e', 0.05, 0.8);
@@ -187,13 +189,19 @@ export function buildCar() {
       const face = mesh(cyl(0.2286, 0.05, 0.05, 'x', 32), std('#b9bfc6', 0.9, 0.32), 0.07, 0, 0);
       face.scale.set(0.2, 1, 1);
       spin.add(face);
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * TAU;
-        const sp = mesh(rbox(0.02, 0.2, 0.034, 0.006), std('#d5d9de', 0.9, 0.28), 0.085, 0, 0);
-        sp.geometry.translate(0, 0.12, 0);
-        sp.rotation.x = a;
-        spin.add(sp);
+      // V-spoke: five pairs that leave the hub together and open towards the rim
+      for (let i = 0; i < 5; i++) {
+        for (const d of [-0.2, 0.2]) {
+          const sp = mesh(rbox(0.02, 0.2, 0.03, 0.006), std('#d5d9de', 0.9, 0.28), 0.085, 0, 0);
+          sp.geometry.translate(0, 0.12, 0);
+          sp.rotation.x = (i / 5) * TAU + d;
+          spin.add(sp);
+        }
       }
+      const cap = new THREE.Mesh(new THREE.CircleGeometry(0.032, 32), roundelMaterial());
+      cap.rotation.y = Math.PI / 2;
+      cap.position.set(0.1, 0, 0);
+      spin.add(cap);
       g.add(w);
       A.wheels.push({spin, tag});
     });
@@ -614,7 +622,10 @@ export function buildCar() {
     g.add(mesh(cyl(0.04, 0.04, 0.3, 'z', 20), std('#c78a3f', 0.6, 0.5), -0.15, 0.27, 0.8));
     g.add(tube([[-0.15, 0.27, 0.62], [-0.12, 0.24, 0.1], [-0.1, 0.235, -1.2], [-0.1, 0.27, -1.55], [-0.1, 0.3, -1.68]], 0.026, pipe, 60, 12));
     g.add(edged(mesh(rbox(0.7, 0.17, 0.4, 0.05), glassy('#c6ccd2', 0.4), 0, 0.31, -1.86)));
-    for (const s of [-1, 1]) g.add(tube([[s * 0.24, 0.31, -2.0], [s * 0.4, 0.31, -2.2], [s * 0.4, 0.31, -2.4]], 0.028, std('#d5d9de', 0.95, 0.2), 20, 12));
+    for (const s of [-1, 1]) {
+      g.add(tube([[s * 0.24, 0.33, -2.0], [s * 0.4, 0.36, -2.2], [s * 0.4, 0.37, -2.33]], 0.026, pipe, 20, 12));
+      g.add(mesh(cyl(0.036, 0.036, 0.07, 'z', 28, true), std('#e4e8ec', 0.98, 0.12, {side: THREE.DoubleSide}), s * 0.4, 0.37, -2.34));
+    }
   });
 
   // ============================================================ driveline
@@ -673,6 +684,9 @@ export function buildCar() {
       A.halfs.push(h);
     }
   });
+
+  addBodyDetails(parts, body, paintMat);
+  A.led = parts.find((p) => p.id === 'port').obj.userData.led;
 
   // ============================================================ finish: materials per part, centres, picking
   const pickables = [];
@@ -837,7 +851,7 @@ export function buildCar() {
       f.scale.y = lvl * 0.12;
       f.position.y = 0.245 + (lvl * 0.12) / 2;
     }
-    A.led.material.color.set(o.plugged ? '#39d98a' : '#4c545c');
+    A.led.material.color.set(o.plugged ? '#39d98a' : '#dfe6ee');
 
     // energy along the cables: + moves from the pack towards the motor
     const flows = {bat: o.Pbat, mot: o.Pm / 0.92, chg: -o.Pcharge};

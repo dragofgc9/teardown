@@ -4,6 +4,7 @@
 // between the axles. Wheel arches are real openings: every triangle inside the arch circle is removed and the edge
 // snapped to the circle.
 import * as THREE from 'three';
+import {toCreasedNormals} from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const DIM = {length: 4.633, width: 1.811, height: 1.429, wheelbase: 2.81, zFront: 1.405, zRear: -1.405, nose: 2.235, tail: -2.398};
 
@@ -34,9 +35,9 @@ const pchip = (keys) => {
 const T = {
   yb: pchip([[-2.398, 0.36], [-2.25, 0.32], [-2.0, 0.28], [-1.55, 0.24], [-1.2, 0.22], [1.2, 0.22], [1.6, 0.22], [1.95, 0.24], [2.15, 0.27], [2.235, 0.3]]),
   wb: pchip([[-2.398, 0.74], [-2.25, 0.8], [-2.0, 0.84], [-1.55, 0.88], [-1.2, 0.898], [-0.9, 0.905], [1.0, 0.905], [1.2, 0.903], [1.6, 0.895], [1.95, 0.865], [2.15, 0.8], [2.235, 0.74]]),
-  yBelt: pchip([[-2.398, 0.88], [-2.25, 0.93], [-2.0, 0.96], [-1.55, 0.98], [-1.2, 0.99], [-0.9, 1.0], [0.5, 1.0], [0.97, 0.97], [1.2, 0.92], [1.6, 0.85], [1.95, 0.78], [2.15, 0.72], [2.235, 0.66]]),
+  yBelt: pchip([[-2.398, 0.9], [-2.25, 0.94], [-2.0, 0.975], [-1.55, 1.0], [-1.2, 1.03], [-0.9, 1.03], [-0.3, 1.005], [0.5, 0.985], [0.97, 0.96], [1.2, 0.92], [1.6, 0.85], [1.95, 0.79], [2.15, 0.74], [2.235, 0.68]]),
   yTop: pchip([
-    [-2.398, 0.9], [-2.25, 0.95], [-2.0, 0.975], [-1.55, 0.995], [-1.4, 1.1], [-1.2, 1.25], [-1.0, 1.35], [-0.9, 1.385], [-0.5, 1.42], [-0.3, 1.429], [0.0, 1.42], [0.15, 1.39], [0.5, 1.2],
+    [-2.398, 0.92], [-2.25, 0.96], [-2.0, 0.985], [-1.55, 1.0], [-1.4, 1.1], [-1.2, 1.25], [-1.0, 1.35], [-0.9, 1.385], [-0.5, 1.42], [-0.3, 1.429], [0.0, 1.42], [0.15, 1.39], [0.5, 1.2],
     [0.97, 0.985], [1.2, 0.955], [1.6, 0.9], [1.95, 0.84], [2.15, 0.78], [2.235, 0.7],
   ]),
 };
@@ -60,18 +61,21 @@ function half(z) {
   const yBelt = T.yBelt(z);
   const yTop = Math.max(T.yTop(z), yBelt + 0.03);
   const h = yTop - yBelt;
-  const wTop = wb * (0.93 - 0.24 * ss(h / 0.43));
+  const wTop = wb * (0.92 - 0.27 * ss(h / 0.43));
   const ws = 0.6;
+  // the character line (C3) is the widest point; above it the flank tucks in 24° to the belt
+  const yC = yBelt - 0.17;
   const A = [
     [ws, yb],
-    [ws + 0.75 * (wb - ws), yb + 0.05],
-    [wb - 0.012, yb + 0.22],
-    [wb, yb + (yBelt - yb) * 0.62],
-    [wb - 0.014, yBelt],
+    [ws + 0.7 * (wb - ws), yb + 0.045],
+    [wb - 0.03, yb + 0.16],
+    [wb - 0.008, yb + 0.3],
+    [wb, yC],
+    [wb - 0.075, yBelt],
   ];
   const B = [
-    [wb - 0.014, yBelt],
-    [wb - 0.014 - (wb - 0.014 - wTop) * 0.55, yBelt + h * 0.55 + 0.004],
+    [wb - 0.075, yBelt],
+    [wb - 0.075 - (wb - 0.075 - wTop) * 0.55, yBelt + h * 0.55 + 0.004],
     [wTop, yBelt + h * 0.93],
     [wTop * 0.5, yTop - 0.004],
     [0, yTop],
@@ -89,15 +93,15 @@ const sampleCurve = (pts, n, first) => {
   return out;
 };
 // the nose and tail close like a superellipse over their last stretch
-const TAPER = {front: 0.12, rear: 0.14};
+const TAPER = {front: 0.075, rear: 0.085};
 const taper = (z) => {
   if (z > DIM.nose - TAPER.front) {
     const t = (z - (DIM.nose - TAPER.front)) / TAPER.front;
-    return Math.pow(Math.max(0, 1 - Math.pow(t, 3)), 1 / 3);
+    return Math.pow(Math.max(0, 1 - Math.pow(t, 4)), 1 / 4);
   }
   if (z < DIM.tail + TAPER.rear) {
     const t = (DIM.tail + TAPER.rear - z) / TAPER.rear;
-    return Math.pow(Math.max(0, 1 - Math.pow(t, 3)), 1 / 3);
+    return Math.pow(Math.max(0, 1 - Math.pow(t, 4)), 1 / 4);
   }
   return 1;
 };
@@ -118,6 +122,9 @@ const DOORS = [
 function ownerOf(zc, j, yc) {
   const jj = j < RING / 2 ? j : RING - 2 - j; // mirrored to the left half, 0..27
   const left = j < RING / 2;
+  // the flat end faces are painted; the black valance is a decal across them (details.js)
+  if (zc >= DIM.nose - 1e-6) return {id: 'bumperF', m: 0};
+  if (zc <= DIM.tail + 1e-6) return {id: 'bumperR', m: 0};
   if (zc > 2.02) return {id: 'bumperF', m: yc < 0.43 ? 2 : 0};
   if (zc < -2.05) return {id: 'bumperR', m: yc < 0.45 ? 2 : 0};
   if (jj >= BELT) {
@@ -149,22 +156,30 @@ export const BODY_PANELS = {
 };
 
 export function buildBody() {
-  const zs = [];
-  for (let z = DIM.tail; z < DIM.nose - 1e-6; z += DZ) zs.push(z);
-  zs.push(DIM.nose);
+  // regular stations, then two at each end on the same z: the last ring at full size and a collapsed one behind it,
+  // which closes the nose and the tail with a flat face instead of pinching them to a point
+  const zs = [DIM.tail];
+  const collapsed = [true];
+  for (let z = DIM.tail; z < DIM.nose - 1e-6; z += DZ) {
+    zs.push(z);
+    collapsed.push(false);
+  }
+  zs.push(DIM.nose, DIM.nose);
+  collapsed.push(false, true);
   const NS = zs.length;
   const P = new Float32Array(NS * RING * 3);
   const inside = new Uint8Array(NS * RING);
   for (let i = 0; i < NS; i++) {
     const z = zs[i];
     const {A, B, yc} = half(z);
-    const left = [...sampleCurve(A, NA, true), ...sampleCurve(B, NB, false)];
-    const s = taper(z);
+    const left = [...sampleCurve(A.slice(0, 5), 12, true), ...sampleCurve(A.slice(4), 4, false), ...sampleCurve(B, NB, false)];
+    const s = collapsed[i] ? 0 : 1;
+    const yBot = left[0][1];
     for (let k = 0; k < RING; k++) {
       const l = k < HALF ? left[k] : left[RING - 1 - k];
       const sign = k < HALF ? 1 : -1;
       let x = sign * l[0] * s;
-      let y = yc + (l[1] - yc) * s;
+      let y = yBot + (l[1] - yBot) * s; // the collapsed ring lies on the bottom edge, so the end face has no notch
       let zz = z;
       const o = (i * RING + k) * 3;
       // wheel arches: vertices inside the circle snap to its edge, the ones that were inside are remembered
@@ -186,6 +201,16 @@ export function buildBody() {
     }
   }
   // cells, bucketed per panel and material
+  const belt = {L: [], R: []};
+  const crease = {L: [], R: []};
+  for (let i = 0; i < NS; i++) {
+    for (const [side, k] of [['L', BELT], ['R', RING - 1 - BELT]]) {
+      const o = (i * RING + k) * 3;
+      belt[side].push([P[o], P[o + 1], P[o + 2]]);
+      const c = (i * RING + (side === 'L' ? 12 : RING - 1 - 12)) * 3;
+      crease[side].push([P[c], P[c + 1], P[c + 2]]);
+    }
+  }
   const buckets = {};
   for (let i = 0; i < NS - 1; i++) {
     const zc = (zs[i] + zs[i + 1]) / 2;
@@ -224,9 +249,9 @@ export function buildBody() {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setIndex(index);
     for (const g of groups) geo.addGroup(g.start, g.count, g.materialIndex);
-    geo.computeVertexNormals();
-    geo.computeBoundingBox();
-    panels[id] = geo;
+    const crisp = toCreasedNormals(geo, 0.35);
+    crisp.computeBoundingBox();
+    panels[id] = crisp;
   }
-  return {panels, arches: ARCH, archY: AY};
+  return {panels, arches: ARCH, archY: AY, belt, crease, zs};
 }

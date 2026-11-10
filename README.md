@@ -10,9 +10,11 @@ Ask how something works. Claude builds it as one offline HTML page: the machine 
 |---|---|
 | ![Telson SC-8 robotic scorpion](docs/scorpion.gif) | ![Pelagos OC-8 robotic octopus](docs/octopus.gif) |
 
-And a car: the 2017 BMW 330e plug-in hybrid, with eight systems you can isolate, explode, or pull apart one part at a time.
+And a car: the 2017 BMW 330e (F30) plug-in hybrid, with eight systems you can isolate, explode, or pull apart one part at a time.
 
-![BMW 330e simulator](docs/bmw330e.png)
+| Body off, driving on electricity | The F30 outside |
+|---|---|
+| ![BMW 330e powertrain](docs/bmw330e.png) | ![BMW 330e exterior](docs/bmw330e-exterior.png) |
 
 ## Install
 
