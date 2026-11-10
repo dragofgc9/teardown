@@ -9,8 +9,8 @@ import {MODES, makeCar, stepCar} from './drive.js';
 import {createStage} from './stage.js';
 import {DURATION, SCRIPT} from './tour.js';
 
-const W = 1600;
-const H = 900;
+let W = 1600; // the desktop layout; on phones W and H follow the screen
+let H = 900;
 const IDLE = 25;
 const D2R = Math.PI / 180;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -47,7 +47,8 @@ const ORDER = [
 ];
 
 const CSS = `
-html,body{background:#ecedef;overflow:hidden}
+html,body{background:#ecedef;position:fixed;inset:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none}
+#clip{position:fixed;inset:0;overflow:hidden}
 #app{position:absolute!important;inset:auto!important;left:0;top:0;width:${W}px;height:${H}px;transform-origin:0 0}
 #gl{touch-action:none;cursor:grab}
 #gl.drag{cursor:grabbing}
@@ -57,8 +58,12 @@ html,body{background:#ecedef;overflow:hidden}
 .tourchip.on i{animation:blink 1.2s steps(2) infinite}
 @keyframes blink{50%{opacity:.15}}
 .say{position:absolute;left:50%;top:98px;transform:translateX(-50%);max-width:640px;text-align:center;font:500 15px/1.45 Inter,sans-serif;color:#2a2e33;pointer-events:none;text-shadow:0 0 8px #eceef0,0 0 3px #eceef0}
-.turn{position:fixed;left:0;right:0;bottom:18px;text-align:center;font:600 12px/1.4 'JetBrains Mono',monospace;letter-spacing:1px;color:#8b8f95;text-transform:uppercase;display:none}
-@media (orientation:portrait) and (max-width:820px){.turn{display:block}}
+.ui.m .tourchip{top:90px;height:28px}
+.ui.m .say{top:126px;font-size:12.5px;max-width:88%}
+.ui.m.ls .tourchip{left:12px;transform:none;top:84px}
+.ui.m.ls .say{left:12px;transform:none;top:116px;text-align:left;max-width:300px;font-size:11.5px}
+.ui.m.ls .mcard{left:12px;transform:none;top:84px;width:320px}
+.ui.m.ls .mini{right:auto;left:12px;top:32px}
 `;
 
 export function runLive() {
@@ -67,21 +72,45 @@ export function runLive() {
   style.textContent = CSS;
   document.head.appendChild(style);
   const app = document.getElementById('app');
+  // The 1600 px layout would make a phone widen its layout viewport (innerWidth reads 1500+ on an 844 px screen) and
+  // every size would be computed wrong: clip it in a fixed box so the viewport stays the screen.
+  const clip = document.createElement('div');
+  clip.id = 'clip';
+  app.parentNode.insertBefore(clip, app);
+  clip.appendChild(app);
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  const wantMobile = () => (coarse ? Math.min(innerWidth, innerHeight) < 900 : Math.min(innerWidth, innerHeight) < 560);
+  let mobile = false;
   const canvas = document.createElement('canvas');
   canvas.id = 'gl';
   app.appendChild(canvas);
-  const st = createStage({canvas});
+  const st = createStage({canvas, mobile: coarse || wantMobile()});
   const car = st.car;
 
   // ------------------------------------------------------------ quality tiers
-  const TIERS = [{shadow: 2048, pr: 2}, {shadow: 1024, pr: 1.5}, {shadow: 1024, pr: 1}];
-  const light = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 700;
-  let tier = light ? 2 : 0;
+  // 0 desktop; 1 phones start here (no MSAA, 1.5x, small shadow map); 2 no shadows (a blob instead), 1x. A slow
+  // device steps down on its own.
+  const TIERS = [{shadow: 2048, pr: 2}, {shadow: 1024, pr: 1.5}, {shadow: 0, pr: 1}];
+  let tier = coarse || wantMobile() ? 1 : 0;
   let scale = 1;
   const fit = () => {
-    const h = innerHeight - top;
-    scale = Math.min(innerWidth / W, h / H);
-    app.style.transform = `translate(${(innerWidth - W * scale) / 2}px, ${top + (h - H * scale) / 2}px) scale(${scale})`;
+    if (mobile) {
+      W = innerWidth;
+      H = innerHeight;
+      scale = 1;
+      app.style.width = W + 'px';
+      app.style.height = H + 'px';
+      app.style.transform = 'none';
+    } else {
+      W = 1600;
+      H = 900;
+      app.style.width = '';
+      app.style.height = '';
+      const h = innerHeight - top;
+      scale = Math.min(innerWidth / W, h / H);
+      app.style.transform = `translate(${(innerWidth - W * scale) / 2}px, ${top + (h - H * scale) / 2}px) scale(${scale})`;
+    }
+    st.setFov(W / H < 1.25 ? 38 : 24);
     st.resize(W, H, clamp((devicePixelRatio || 1) * scale, 0.75, TIERS[tier].pr));
   };
   const applyTier = () => {
@@ -89,7 +118,6 @@ export function runLive() {
     fit();
   };
   applyTier();
-  addEventListener('resize', fit);
   const toStage = (cx, cy) => {
     const r = app.getBoundingClientRect();
     return [(cx - r.left) / scale, (cy - r.top) / scale];
@@ -198,10 +226,81 @@ export function runLive() {
   const say = document.createElement('div');
   say.className = 'say';
   ui.root.appendChild(say);
-  const note = document.createElement('div');
-  note.className = 'turn';
-  note.textContent = 'Turn your phone sideways for the full console';
-  document.body.appendChild(note);
+
+  // ------------------------------------------------------------ phones: panels move into a tabbed drawer
+  // Portrait: a sheet along the bottom you scroll sideways. Landscape: a column down the right edge. The same panels,
+  // scaled 1.15x for fingers; the speed and the selected part get compact versions of their own (console.js).
+  const P = ui.panels;
+  const orig = Object.fromEntries(Object.entries(P).map(([k, p]) => [k, p.style.cssText]));
+  const KEYS = ['sys', 'take', 'drive', 'modes', 'flow', 'chart', 'gear'];
+  const SZ = Object.fromEntries(KEYS.map((k) => [k, [parseFloat(P[k].style.width), parseFloat(P[k].style.height)]]));
+  const PK = 1.15;
+  const TABS = [['parts', 'Parts', ['sys', 'take']], ['drive', 'Drive', ['drive', 'modes']], ['power', 'Power', ['flow', 'chart']], ['gear', 'Gearbox', ['gear']]];
+  const drawer = document.createElement('div');
+  drawer.className = 'drawer';
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  const tabs = document.createElement('div');
+  tabs.className = 'tabs';
+  drawer.append(sheet, tabs);
+  ui.root.appendChild(drawer);
+  let openTab = null;
+  let drawerSize = [0, 0];
+  const measure = () => (drawerSize = [drawer.offsetWidth, drawer.offsetHeight]);
+  const setTab = (id) => {
+    openTab = id;
+    drawer.classList.toggle('open', !!id);
+    TABS.forEach(([t], i) => tabBtns[i].classList.toggle('on', t === id));
+    sheet.replaceChildren(...(id ? TABS.find((t) => t[0] === id)[2].map((k) => P[k]) : []));
+    measure();
+  };
+  const tabBtns = TABS.map(([id, name]) => {
+    const b = document.createElement('div');
+    b.className = 'btn';
+    b.textContent = name;
+    b.addEventListener('click', () => {
+      takeOver();
+      setTab(openTab === id ? null : id);
+    });
+    tabs.appendChild(b);
+    return b;
+  });
+  const enterMobile = () => {
+    // CSS zoom, not a transform: scaled layers composite badly in some browsers, and zoom also grows the layout box
+    for (const k of KEYS) {
+      const [w, h] = SZ[k];
+      P[k].style.cssText = `position:relative;flex:none;width:${w}px;height:${h}px;zoom:${PK}`;
+      P[k].remove(); // it comes back inside the sheet when its tab opens
+    }
+    P.cams.style.pointerEvents = 'auto';
+  };
+  const exitMobile = () => {
+    for (const k of [...KEYS, 'cams']) {
+      ui.root.appendChild(P[k]);
+      P[k].style.cssText = orig[k];
+    }
+    sheet.replaceChildren();
+    openTab = null;
+    drawer.classList.remove('open');
+    TABS.forEach((_, i) => tabBtns[i].classList.remove('on'));
+  };
+  const layout = () => {
+    const m = wantMobile();
+    if (m !== mobile) {
+      mobile = m;
+      ui.root.classList.toggle('m', m);
+      m ? enterMobile() : exitMobile();
+    }
+    const land = innerWidth > innerHeight;
+    ui.root.classList.toggle('pt', m && !land);
+    ui.root.classList.toggle('ls', m && land);
+    if (m) P.cams.style.cssText = land ? 'position:absolute;left:150px;top:6px;right:12px;height:34px;overflow-x:auto;overflow-y:hidden;pointer-events:auto;background:transparent;border:0;box-shadow:none' : 'position:absolute;left:0;right:0;top:50px;height:34px;overflow-x:auto;overflow-y:hidden;pointer-events:auto;background:transparent;border:0;box-shadow:none';
+    fit();
+    measure();
+  };
+  addEventListener('resize', layout);
+  addEventListener('orientationchange', () => setTimeout(layout, 120));
+  layout();
   // the playback step: − / + beside the label
   {
     const tp = ui.playVal.parentNode;
@@ -296,14 +395,29 @@ export function runLive() {
 
   // ------------------------------------------------------------ pointer: orbit, hover, click to pull
   let drag = null;
+  const ptrs = new Map(); // touches down on the canvas, for the two-finger pinch
+  let pinch = null;
   const stagePos = (e) => toStage(e.clientX, e.clientY);
   canvas.addEventListener('pointerdown', (e) => {
-    drag = {x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false};
+    ptrs.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    if (ptrs.size === 2) {
+      const [a, b] = [...ptrs.values()];
+      pinch = {d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, k0: off.k};
+      if (drag) drag.moved = true;
+    }
+    drag = {x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: !!pinch};
     canvas.setPointerCapture(e.pointerId);
     canvas.classList.add('drag');
   });
   canvas.addEventListener('pointermove', (e) => {
     const [x, y] = stagePos(e);
+    if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    if (pinch && ptrs.size >= 2) {
+      const [a, b] = [...ptrs.values()];
+      off.k = clamp(pinch.k0 * (pinch.d0 / (Math.hypot(a.x - b.x, a.y - b.y) || 1)), 0.3, 2.2);
+      lastInput = T;
+      return;
+    }
     if (drag) {
       if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 5) drag.moved = true;
       if (drag.moved) {
@@ -319,6 +433,8 @@ export function runLive() {
   });
   canvas.addEventListener('pointerleave', () => (tipPos = null));
   const endDrag = (e) => {
+    ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinch = null;
     if (drag && !drag.moved && e.type === 'pointerup') {
       const [x, y] = stagePos(e);
       const p = st.pick(x, y);
@@ -397,7 +513,7 @@ export function runLive() {
     }
 
     const o = tick(dt);
-    st.frame({...cam, az: cam.az * D2R, el: cam.el * D2R, sx: 0, sy: -14}, vehicle.dist, o.v > 0.3);
+    st.frame({...cam, az: cam.az * D2R, el: cam.el * D2R, sx: cam.sx, sy: cam.sy}, vehicle.dist, o.v > 0.3);
     drawUi(o);
     requestAnimationFrame(frame);
   };
@@ -455,10 +571,25 @@ export function runLive() {
     // camera eases to its target
     const k = 1 - Math.exp(-dt / (AP.on ? 0.55 : 0.4));
     cam.az += wrap(viewT.az + off.az - cam.az) * k;
+    // a narrow screen backs the camera off so the car still fits the width
+    const asp = W / H;
+    const fitK = mobile ? Math.max(1, ((Math.tan(12 * D2R) * 1.78) / (Math.tan(((asp < 1.25 ? 38 : 24) / 2) * D2R) * asp)) * 0.8) : 1;
     for (const key of ['tx', 'ty', 'tz', 'el', 'd']) {
-      const goal = key === 'el' ? clamp(viewT.el + off.el, -60, 86) : key === 'd' ? viewT.d * off.k * (1 + 0.3 * Math.max(S.explode, partOut() / car.parts.length)) : viewT[key];
+      const goal = key === 'el' ? clamp(viewT.el + off.el, -60, 86) : key === 'd' ? viewT.d * fitK * off.k * (1 + 0.3 * Math.max(S.explode, partOut() / car.parts.length)) : viewT[key];
       cam[key] += (goal - cam[key]) * k;
     }
+    // centre the car in what the panels leave free
+    let gx = 0;
+    let gy = -14;
+    if (mobile) {
+      if (H > W) gy = (124 + (H - (openTab ? drawerSize[1] : 44))) / 2 - H / 2;
+      else {
+        gx = (W - (openTab ? drawerSize[0] : 0)) / 2 - W / 2;
+        gy = 22;
+      }
+    }
+    cam.sx += (gx - cam.sx) * k;
+    cam.sy += (gy - cam.sy) * k;
     // hover
     if (!seeking && tipPos && !drag) {
       const p = st.pick(tipPos[0], tipPos[1]);
@@ -508,12 +639,12 @@ export function runLive() {
   st.renderer.compileAsync(st.scene, st.camera).then(() => requestAnimationFrame(frame), () => requestAnimationFrame(frame));
   window.LIVE = {st, S, vehicle, car, cam, api, startTour, takeOver, step: (sec) => {
     for (let tt = 0; tt < sec; tt += 1 / 30) tick(1 / 30, true);
-    st.frame({...cam, az: cam.az * D2R, el: cam.el * D2R, sx: 0, sy: -14}, vehicle.dist, vehicle.out.v > 0.3);
+    st.frame({...cam, az: cam.az * D2R, el: cam.el * D2R, sx: cam.sx, sy: cam.sy}, vehicle.dist, vehicle.out.v > 0.3);
     drawUi(vehicle.out);
   }, seek: (t) => {
     startTour();
     for (let tt = 0; tt < t; tt += 1 / 30) tick(1 / 30, true);
-    st.frame({...cam, az: cam.az * D2R, el: cam.el * D2R, sx: 0, sy: -14}, vehicle.dist, vehicle.out.v > 0.3);
+    st.frame({...cam, az: cam.az * D2R, el: cam.el * D2R, sx: cam.sx, sy: cam.sy}, vehicle.dist, vehicle.out.v > 0.3);
     drawUi(vehicle.out);
   }, sim: (sec) => {
     for (let i = 0; i < sec * 120; i++) stepCar(vehicle, 1 / 120, {target: S.target / 3.6, mode: S.mode, plug: S.plug, kick: S.kick});

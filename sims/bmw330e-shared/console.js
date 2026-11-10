@@ -55,6 +55,35 @@ const CSS = `
 .tag{display:inline-block;padding:2px 7px;font-size:8.8px;font-weight:600;letter-spacing:1.1px;text-transform:uppercase;color:#fff}
 .tip{position:absolute;pointer-events:none;padding:4px 8px;background:${K.ink};color:#fff;font-size:11px;font-weight:600;letter-spacing:.3px;white-space:nowrap;transform:translate(14px,-130%)}
 .lead{position:absolute;pointer-events:none}
+.mob{display:none}
+.ui.m .mob{display:flex}
+.ui.m .dk{display:none!important}
+.mini{position:absolute;left:auto;width:max-content;right:12px;top:6px;align-items:baseline;gap:7px;pointer-events:none;text-shadow:0 0 6px #eceef0}
+.mini .mono{font-size:30px;font-weight:600;letter-spacing:-1px}
+.mini .val{font-size:15px}
+.mcard{position:absolute;left:50%;top:126px;transform:translateX(-50%);width:min(92%,520px);flex-direction:column;gap:5px;padding:9px 11px;background:${K.panel};border:1px solid ${K.line};pointer-events:auto;box-sizing:border-box}
+.mcard .r1{display:flex;align-items:center;gap:8px}
+.mcard b{font-size:16px;font-weight:600;flex:1}
+.mcard p{margin:0;font-size:11.5px;line-height:1.4;color:#3b4046;max-height:3.2em;overflow:hidden}
+.mcard .btn{height:32px;min-width:64px}
+.ui.m .ttl{left:12px!important;top:8px!important}
+.ui.m .ttl div:first-child{font-size:21px!important}
+.ui.m .ttl .cap{display:none}
+.ui.m .camrow{left:8px!important;transform:none!important;top:0!important}
+.ui.m .camrow .btn{width:54px!important;height:30px}
+.drawer{display:none;position:absolute;z-index:5;pointer-events:auto;background:#f9f9fa;border:1px solid ${K.line}}
+.ui.m .drawer{display:flex;flex-direction:column}
+.ui.m.pt .drawer{left:0;right:0;bottom:0;padding-bottom:env(safe-area-inset-bottom)}
+.ui.m.ls .drawer{right:0;bottom:0;width:344px;padding-bottom:env(safe-area-inset-bottom)}
+.ui.m.ls .drawer.open{top:0}
+.drawer .pn{background:#f9f9fa}
+.drawer .tabs{display:flex;order:2;border-top:1px solid ${K.line}}
+.drawer .tabs .btn{flex:1;height:44px;border:0;border-right:1px solid ${K.line};font-size:10px}
+.drawer .tabs .btn:last-child{border-right:0}
+.drawer .sheet{display:none;order:1;background:#f9f9fa;gap:10px;padding:10px;box-sizing:border-box;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.drawer.open .sheet{display:flex}
+.ui.m.pt .drawer .sheet{flex-direction:row;overflow-x:auto;overflow-y:auto;max-height:50vh;align-items:flex-start}
+.ui.m.ls .drawer .sheet{flex-direction:column;overflow-y:auto;overflow-x:hidden;flex:1;align-items:flex-start}
 `;
 
 const el = (tag, cls, parent, html) => {
@@ -81,6 +110,7 @@ export function createConsole(app, api) {
 
   // ------------------------------------------------------------ title
   const title = el('div', '', root);
+  title.className = 'ttl';
   title.style.cssText = 'position:absolute;left:24px;top:22px;pointer-events:none';
   title.innerHTML = `<div style="font-size:30px;font-weight:600;letter-spacing:-.6px">BMW 330e</div>
     <div class="cap" style="margin-top:4px">F30 · 2017 · iPerformance plug-in hybrid</div>`;
@@ -143,7 +173,7 @@ export function createConsole(app, api) {
   cr.style.border = '0';
   cr.style.boxShadow = 'none';
   cr.style.pointerEvents = 'none';
-  const cams = el('div', 'row', cr);
+  const cams = el('div', 'row camrow', cr);
   cams.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);gap:4px;top:0';
   for (const c of CAMS) {
     const b = el('div', 'btn', cams, c);
@@ -251,6 +281,7 @@ export function createConsole(app, api) {
   // ------------------------------------------------------------ part card (bottom centre)
   const card = panel(330, 782, 940, 96);
   U.card = card;
+  card.classList.add('dk');
   U.cardTag = el('span', 'tag', card, '');
   U.cardTag.style.cssText = 'position:absolute;left:16px;top:14px';
   U.cardName = el('div', '', card, '');
@@ -265,6 +296,22 @@ export function createConsole(app, api) {
   U.cardHide.addEventListener('click', () => api.onDeselect());
   U.cardCount = el('div', 'hint', card, '');
   U.cardCount.style.cssText = 'position:absolute;left:16px;top:66px;text-transform:none;letter-spacing:.3px;font-size:11px';
+
+  // compact versions for phones (the .ui.m layout): the speed readout and the selected part
+  U.mini = el('div', 'mob mini', root, '<span class="mono" data-k="s">0</span><span class="unit">km/h</span><span class="val mono" data-k="g">P</span><span class="cap" data-k="t"></span>');
+  U.miniS = U.mini.querySelector('[data-k=s]');
+  U.miniG = U.mini.querySelector('[data-k=g]');
+  U.miniT = U.mini.querySelector('[data-k=t]');
+  U.mcard = el('div', 'mob mcard', root, '<div class="r1"><span class="tag" data-k="tag"></span><b data-k="name"></b><div class="btn" data-k="pull">Pull out</div><div class="btn" data-k="x">Done</div></div><p data-k="info"></p>');
+  U.mcard.style.display = 'none';
+  const mq = (k) => U.mcard.querySelector(`[data-k=${k}]`);
+  U.mTag = mq('tag');
+  U.mName = mq('name');
+  U.mInfo = mq('info');
+  U.mPull = mq('pull');
+  mq('pull').addEventListener('click', () => api.onCardRemove());
+  mq('x').addEventListener('click', () => api.onDeselect());
+  U.panels = {title, sys: sp, take: tp, cams: cr, drive: dp, modes: mp, flow: fp, chart: hp, gear: gp, card};
 
   U.tip = el('div', 'tip', root, '');
   U.tip.style.display = 'none';
@@ -283,9 +330,9 @@ export function createConsole(app, api) {
     set(0);
     let down = false;
     const move = (e) => {
+      // a fraction of the track's own on-screen width, so it holds under any scale, transform or zoom
       const b = r.getBoundingClientRect();
-      const sc = b.width / w;
-      onChange(Math.min(1, Math.max(0, (e.clientX - b.left) / sc / w)));
+      onChange(Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)));
     };
     r.addEventListener('pointerdown', (e) => {
       down = true;
@@ -418,6 +465,20 @@ export function createConsole(app, api) {
     } else {
       U.card.style.display = 'none';
     }
+    // phones: the always-visible speed and the selected part
+    txt('mS', U.miniS, fmt(o.kmh));
+    txt('mG', U.miniG, o.v < 0.05 && o.rpm < 1 ? 'P' : 'D' + o.gear);
+    txt('mT', U.miniT, st);
+    if (p) {
+      U.mcard.style.display = '';
+      const sy2 = SYSTEMS.find((q) => q.id === p.system);
+      txt('mTag', U.mTag, sy2.short);
+      U.mTag.style.background = SYS_COLOR[p.system];
+      txt('mName', U.mName, p.name);
+      txt('mInfo', U.mInfo, p.info);
+      U.mPull.style.display = p.ex.lengthSq() > 1e-4 ? '' : 'none';
+      txt('mPull', U.mPull, p.pullT > 0.5 ? 'Put back' : 'Pull out');
+    } else U.mcard.style.display = 'none';
     // hover tip
     if (s.tip) {
       U.tip.style.display = '';

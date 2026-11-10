@@ -6,8 +6,9 @@ import {buildCar} from './car.js';
 const V3 = THREE.Vector3;
 export const BG = {top: '#f3f3f4', mid: '#e9eaec', low: '#e0e1e4'};
 
-export function createStage({canvas}) {
-  const renderer = new THREE.WebGLRenderer({canvas, antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance'});
+export function createStage({canvas, mobile = false}) {
+  // phones skip MSAA: the pixel ratio does the smoothing and the fill rate matters more
+  const renderer = new THREE.WebGLRenderer({canvas, antialias: !mobile, preserveDrawingBuffer: true, powerPreference: 'high-performance'});
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
@@ -102,6 +103,28 @@ export function createStage({canvas}) {
   road3.material = road.material;
   scene.add(road2, road3);
 
+  // when real shadows are off (phones), a soft blob under the car keeps it on the ground
+  const blob = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(70,76,86,.42)');
+    gr.addColorStop(0.55, 'rgba(70,76,86,.2)');
+    gr.addColorStop(1, 'rgba(70,76,86,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 128, 128);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 2.5), new THREE.MeshBasicMaterial({map: t, transparent: true, depthWrite: false}));
+    m.rotation.x = -Math.PI / 2;
+    m.position.y = 0.004;
+    m.rotation.z = Math.PI / 2;
+    m.visible = false;
+    scene.add(m);
+    return m;
+  })();
+
   const car = buildCar();
   scene.add(car.root);
 
@@ -142,12 +165,33 @@ export function createStage({canvas}) {
     }
     return null;
   };
+  let shadowsOn = true;
   const setQuality = ({shadow}) => {
-    if (shadow !== undefined) {
+    if (shadow === undefined) return;
+    const on = shadow > 0;
+    if (on) {
       sun.shadow.mapSize.set(shadow, shadow);
       sun.shadow.map?.dispose();
       sun.shadow.map = null;
     }
+    if (on !== shadowsOn) {
+      shadowsOn = on;
+      sun.castShadow = on;
+      renderer.shadowMap.enabled = on;
+      shade.visible = on;
+      blob.visible = !on;
+      scene.traverse((o) => {
+        const m = o.material;
+        if (m) for (const x of Array.isArray(m) ? m : [m]) x.needsUpdate = true;
+      });
+    }
   };
-  return {renderer, scene, camera, car, sun, resize, frame, project, pick, size, setQuality};
+  // narrow screens need a wider lens to keep the car in frame
+  const setFov = (f) => {
+    if (camera.fov !== f) {
+      camera.fov = f;
+      camera.updateProjectionMatrix();
+    }
+  };
+  return {renderer, scene, camera, car, sun, resize, frame, project, pick, size, setQuality, setFov};
 }
