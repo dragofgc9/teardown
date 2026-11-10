@@ -6,9 +6,10 @@ import {buildCar} from './car.js';
 const V3 = THREE.Vector3;
 export const BG = {top: '#f3f3f4', mid: '#e9eaec', low: '#e0e1e4'};
 
-export function createStage({canvas, mobile = false}) {
-  // phones skip MSAA: the pixel ratio does the smoothing and the fill rate matters more
-  const renderer = new THREE.WebGLRenderer({canvas, antialias: !mobile, preserveDrawingBuffer: true, powerPreference: 'high-performance'});
+export function createStage({canvas}) {
+  // MSAA everywhere: a phone's tile-based GPU resolves it almost for free, and without it every panel edge and outline
+  // crawls. The quality tiers in live.js trade shadows and pixel ratio instead.
+  const renderer = new THREE.WebGLRenderer({canvas, antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance'});
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;

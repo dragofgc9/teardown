@@ -84,14 +84,16 @@ export function runLive() {
   const canvas = document.createElement('canvas');
   canvas.id = 'gl';
   app.appendChild(canvas);
-  const st = createStage({canvas, mobile: coarse || wantMobile()});
+  const st = createStage({canvas});
   const car = st.car;
 
   // ------------------------------------------------------------ quality tiers
-  // 0 desktop; 1 phones start here (no MSAA, 1.5x, small shadow map); 2 no shadows (a blob instead), 1x. A slow
-  // device steps down on its own.
-  const TIERS = [{shadow: 2048, pr: 2}, {shadow: 1024, pr: 1.5}, {shadow: 0, pr: 1}];
+  // 0 desktop; 1 phones start here (smaller shadow map); 2 no shadows (a blob instead). Resolution goes last: a phone
+  // screen is 3 device pixels per CSS pixel, so 1x there is a 3 x 3 block per rendered pixel and the car reads as
+  // pixel art. A slow device steps down on its own.
+  const TIERS = [{shadow: 2048, pr: 2}, {shadow: 1024, pr: 2}, {shadow: 0, pr: 2}, {shadow: 0, pr: 1.5}, {shadow: 0, pr: 1}];
   let tier = coarse || wantMobile() ? 1 : 0;
+  let pinned = false; // LIVE.setTier holds a tier for review
   let scale = 1;
   const fit = () => {
     if (mobile) {
@@ -142,6 +144,9 @@ export function runLive() {
     paused: false,
     hide: false,
   };
+  // one step so the readouts exist before the first frame: a first frame of zero length (a browser that rounds its
+  // clock) would otherwise pose the car from an empty state and stop the loop
+  stepCar(vehicle, 1 / 120, {target: 0, mode: S.mode, plug: false, kick: false});
   const off = {az: 0, el: 0, k: 1};
   let viewT = {...VIEWS.hero};
   const cam = {...VIEWS.hero, sx: 0, sy: -16};
@@ -481,7 +486,12 @@ export function runLive() {
   // ------------------------------------------------------------ the frame
   startTour();
   let last = performance.now();
-  const perf = {n: 0, sum: 0, slow: 0, age: 0};
+  // The governor counts frames slower than 40 ms, not the mean: a browser that caps the page at 30 fps (iOS does it to
+  // an embedded page nobody has touched yet, and in Low Power Mode) delivers every frame at 33 ms on a GPU that is
+  // idle, and one hitch while the page settles is not a slow device either. Half a window under 25 fps, twice running,
+  // is.
+  const SLOW = 0.04;
+  const perf = {n: 0, sum: 0, over: 0, slow: 0, age: 0};
   const counts = () => {
     const o = {};
     for (const s of SYSTEMS) o[s.id] = {all: 0, out: 0};
@@ -494,16 +504,16 @@ export function runLive() {
   const frame = (now) => {
     const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
     last = now;
-    if (tier < TIERS.length - 1) {
+    if (!pinned && tier < TIERS.length - 1) {
       perf.age += dt;
-      if (perf.age > 0.6) {
+      if (perf.age > 1) {
         perf.sum += dt;
         perf.n++;
+        if (dt > SLOW) perf.over++;
         if (perf.sum >= 0.5 && perf.n >= 6) {
-          perf.slow = perf.sum / perf.n > 0.026 ? perf.slow + 1 : 0;
-          perf.sum = 0;
-          perf.n = 0;
-          if (perf.slow >= (perf.age < 6 ? 1 : 2)) {
+          perf.slow = perf.over * 2 > perf.n ? perf.slow + 1 : 0;
+          Object.assign(perf, {sum: 0, n: 0, over: 0});
+          if (perf.slow >= 2) {
             tier++;
             applyTier();
             Object.assign(perf, {age: 0, slow: 0});
@@ -648,6 +658,10 @@ export function runLive() {
     drawUi(vehicle.out);
   }, sim: (sec) => {
     for (let i = 0; i < sec * 120; i++) stepCar(vehicle, 1 / 120, {target: S.target / 3.6, mode: S.mode, plug: S.plug, kick: S.kick});
+  }, setTier: (n) => {
+    tier = clamp(n, 0, TIERS.length - 1);
+    pinned = true;
+    applyTier();
   }, get T() {
     return T;
   }, get tier() {
