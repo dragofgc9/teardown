@@ -17,7 +17,7 @@ cd "$SKILL_DIR" && npm install && npx playwright install chromium
 
 The pages need nothing else. The video needs `ffmpeg` on PATH and the score needs Python 3 (standard library only). Set `FFMPEG`, `PYTHON` or `CHROMIUM` to point at other binaries.
 
-## The 3 examples
+## The 4 examples
 
 Build one, open the HTML, press buttons. Copy the closest one when you start a new machine.
 
@@ -26,12 +26,13 @@ Build one, open the HTML, press buttons. Copy the closest one when you start a n
 | `v8-*` | A cross-plane V8 with glass liners: the charge burns inside the cylinder you track, valves lift on their cams, 8 pistons move from the exact slider-crank. | Crank angle. Firing order 1-8-4-3-6-5-7-2, a chamber pressure model for the indicator diagram. | Cutaway modes (glass, section, solid), the firing order as a cylinder picker, live charts synced to the crank. |
 | `cessna-*` | The Cessna 337 main landing gear folding into the airframe on takeoff and dropping on landing. | Stroke 0..1: a 201 mm rack turns a 32-tooth pinion (module 4 mm) through exactly 180°. | One degree of freedom posing a whole mechanism, flight phases as functions of time, a runway that rolls under the model. |
 | `strandbeest-*` | Theo Jansen's Strandbeest, 20 legs on one crankshaft, walking broadside over sand. | Wind. The crank speed is integrated from it; every joint follows by circle intersection from Jansen's 11 link lengths. | An exact linkage solver in 67 lines, instanced tubes, foot traces, a contact chart of all 20 feet. |
+| `bmw330e-live` | A 2017 BMW 330e plug-in hybrid: B48 turbo four, electric machine behind clutch K0, 8-speed gearbox, 5.7 kWh pack, rear drive. | Target speed + drive mode. A powertrain model integrates speed, gear, engine start/stop, charge and fuel; every part and gauge reads that state. | A lofted body cut into real panels, parts you click to pull out, systems you isolate and hide, an `EXPLODE` slider, a tour with captions, `LIVE.seek(t)` for reviewing a beat as a still. |
 
-Each comes in 3 folders: `<name>-shared/` holds the machine, `<name>-film/` the recorded tour, `<name>-live/` the page you drive.
+The first three each come in 3 folders: `<name>-shared/` holds the machine, `<name>-film/` the recorded tour, `<name>-live/` the page you drive. The 330e has `bmw330e-shared/` and `bmw330e-live/` only; its tour lives in `tour.js` and has no film or score yet.
 
 ```
 node "$SKILL_DIR/sims/build.mjs" v8-live          # → teardown-out/dist/v8-live.html, offline, ~800 KB
-node "$SKILL_DIR/sims/build.mjs"                  # all 6
+node "$SKILL_DIR/sims/build.mjs"                  # every example
 ```
 
 ## How a machine is built

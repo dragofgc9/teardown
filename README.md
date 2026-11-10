@@ -10,6 +10,10 @@ Ask how something works. Claude builds it as one offline HTML page: the machine 
 |---|---|
 | ![Telson SC-8 robotic scorpion](docs/scorpion.gif) | ![Pelagos OC-8 robotic octopus](docs/octopus.gif) |
 
+And a car: the 2017 BMW 330e plug-in hybrid, with eight systems you can isolate, explode, or pull apart one part at a time.
+
+![BMW 330e simulator](docs/bmw330e.png)
+
 ## Install
 
 ```
@@ -40,6 +44,7 @@ Or open one of the 3 examples first:
 node sims/build.mjs v8-live          # teardown-out/dist/v8-live.html
 node sims/build.mjs cessna-live
 node sims/build.mjs strandbeest-live
+node sims/build.mjs bmw330e-live     # a 2017 BMW 330e you can take apart
 ```
 
 ## What is inside
@@ -49,6 +54,7 @@ node sims/build.mjs strandbeest-live
 | `SKILL.md` | What Claude reads: how a machine is built, the rules that make it look right, the review loop. |
 | `sims/kit/` | Runtime, stage, shader warm-up. |
 | `sims/v8-*`, `sims/cessna-*`, `sims/strandbeest-*` | 3 complete machines. `-shared` is the machine, `-live` the page you drive, `-film` the recorded tour. |
+| `sims/bmw330e-*` | The 330e: `-shared` is the car (powertrain model, body, 55 pullable parts), `-live` the page. No film yet. |
 | `sims/build.mjs` | Bundles a machine into one HTML file, three.js and fonts inlined. |
 | `sims/capture.mjs` | Renders the film frame by frame to a 60 fps mp4, or to review sheets of stills. |
 | `sfx/`, `run_sfx.py` | Procedural sound on the film's timeline, mastered to −14 LUFS. |
