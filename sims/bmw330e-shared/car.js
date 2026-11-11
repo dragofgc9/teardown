@@ -53,9 +53,9 @@ export function buildCar() {
 
   // ============================================================ body
   const body = buildBody();
-  const paintMat = () => new THREE.MeshPhysicalMaterial({color: '#2d4f7c', metalness: 0.55, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide});
-  const glassMat = () => new THREE.MeshPhysicalMaterial({color: '#1d2a36', metalness: 0.1, roughness: 0.06, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false});
-  const trimMat = () => new THREE.MeshStandardMaterial({color: '#1c1e21', metalness: 0.2, roughness: 0.6, side: THREE.DoubleSide});
+  const paintMat = () => new THREE.MeshPhysicalMaterial({color: '#e6e8ea', metalness: 0.0, roughness: 0.38, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 0.9, side: THREE.DoubleSide});
+  const glassMat = () => new THREE.MeshPhysicalMaterial({color: '#0c1317', metalness: 0.0, roughness: 0.05, transparent: true, opacity: 0.68, envMapIntensity: 0.5, side: THREE.DoubleSide, depthWrite: false});
+  const trimMat = () => new THREE.MeshStandardMaterial({color: '#08090a', metalness: 0.0, roughness: 0.65, envMapIntensity: 0.25, side: THREE.DoubleSide});
   const PANEL = {
     tub: ['Body shell', [0, 0, 0], 'F30 sedan unibody: 4,633 mm long, 1,811 mm wide, 2,810 mm between the axles. The battery lives under the boot floor.'],
     hood: ['Hood', [0, 0.95, 0.5], 'Hinged at the cowl. Under it: the 2.0 L engine, the eDrive module behind it and the power electronics.'],
@@ -72,28 +72,40 @@ export function buildCar() {
     const [name, ex, info] = PANEL[id];
     const sys = 'body';
     add(id, name, sys, info, ex, (g) => {
-      const m = new THREE.Mesh(geo, [paintMat(), glassMat(), trimMat()]);
+      const skin = paintMat();
+      skin.side = THREE.FrontSide;
+      const m = new THREE.Mesh(geo, [skin, glassMat(), trimMat()]);
       m.castShadow = true;
       m.receiveShadow = true;
       g.add(m);
+      // the inside of every panel is dark, so the glass shows a cabin and not the far side's paint
+      const off = new THREE.MeshBasicMaterial({visible: false});
+      const lining = new THREE.MeshStandardMaterial({color: '#1d1f22', roughness: 0.9, side: THREE.BackSide});
+      const inner = new THREE.Mesh(geo, [lining, off, lining]);
+      inner.raycast = () => {};
+      g.add(inner);
       const left = id.endsWith('L');
       if (id === 'doorFL' || id === 'doorFR') {
+        // door mirror: a painted cap on a black foot at the front corner of the side glass
         const s = left ? 1 : -1;
         const mir = new THREE.Group();
-        mir.add(mesh(rbox(0.11, 0.072, 0.17, 0.03, 3), paintMat(), 0, 0, 0));
-        mir.add(mesh(rbox(0.09, 0.03, 0.06, 0.012), std('#17181a', 0.2, 0.6), -s * 0.02, -0.03, -0.095));
-        const base = mesh(rbox(0.12, 0.03, 0.09, 0.012), std('#17181a', 0.2, 0.6), -s * 0.075, -0.035, 0.0);
-        mir.add(base);
-        mir.position.set(s * 0.97, 0.99, 0.62);
-        mir.rotation.y = s * -0.12;
+        const cap = mesh(new THREE.SphereGeometry(0.5, 24, 16), paintMat(), 0, 0, 0);
+        cap.scale.set(0.175, 0.105, 0.085);
+        mir.add(cap);
+        const glassM = mesh(new THREE.CircleGeometry(0.5, 24), std('#8d99a6', 0.9, 0.08), 0, 0, -0.03);
+        glassM.scale.set(0.15, 0.085, 1);
+        glassM.rotation.y = Math.PI;
+        mir.add(glassM);
+        const low = mesh(new THREE.SphereGeometry(0.5, 20, 12), std('#0e1012', 0.2, 0.5), 0, -0.022, -0.004);
+        low.scale.set(0.166, 0.085, 0.078);
+        mir.add(low);
+        mir.add(mesh(rbox(0.09, 0.026, 0.055, 0.012), std('#0e1012', 0.2, 0.5), -s * 0.075, -0.04, 0.005));
+        const st = body.at(0.69);
+        mir.position.set(s * (st.xBelt + 0.105), st.yBelt + 0.065, 0.69);
+        mir.rotation.y = s * -0.16;
         g.add(mir);
       }
     });
-  }
-  // undertrays close the open underside at the nose and the tail
-  for (const [id, z0, z1] of [['bumperF', 1.8, 2.235], ['bumperR', -2.398, -1.75]]) {
-    const tray = mesh(rbox(1.2, 0.012, z1 - z0, 0.004), new THREE.MeshStandardMaterial({color: '#17181a', roughness: 0.8}), 0, id === 'bumperF' ? 0.285 : 0.295, (z0 + z1) / 2);
-    parts.find((p) => p.id === id).obj.add(tray);
   }
   // wheel arch liners stay with the shell: a half-cylinder over each wheel, open to the road
   {
@@ -426,7 +438,7 @@ export function buildCar() {
     g.add(m);
     for (let i = 0; i < 9; i++) g.add(mesh(rbox(0.64, 0.006, 0.07, 0.002), std('#6c737b', 0.8, 0.4), 0, 0.34 + i * 0.045, 2.0));
     g.add(mesh(cyl(0.17, 0.17, 0.03, 'z', 32), std('#1b1d20', 0.2, 0.7), 0, 0.52, 1.95));
-    g.add(mesh(rbox(1.2, 0.09, 0.07, 0.02), std('#8a9199', 0.8, 0.4), 0, 0.44, 2.12));
+    g.add(mesh(rbox(1.0, 0.09, 0.06, 0.02), std('#8a9199', 0.8, 0.4), 0, 0.44, 2.07));
   });
 
   // ============================================================ eDrive: motor, clutch K0, converter, gearbox
@@ -575,7 +587,7 @@ export function buildCar() {
     for (let i = 0; i < 6; i++) g.add(mesh(rbox(0.22, 0.006, 0.012, 0.002), std('#5b626a', 0.8, 0.4), -0.42, 0.71, 0.99 + i * 0.05));
   });
   add('port', 'Charge port', 'hv', 'Plugged in, the charger fills the pack at up to 3.7 kW: about three hours from empty on a domestic socket.', [0.55, 0.0, 0.25], (g) => {
-    const flap = mesh(cyl(0.05, 0.05, 0.012, 'x', 24), std('#2d4f7c', 0.5, 0.3), 0.915, 0.72, 1.12);
+    const flap = mesh(cyl(0.05, 0.05, 0.012, 'x', 24), std('#f3f4f5', 0.0, 0.3), 0.915, 0.72, 1.12);
     g.add(flap);
     g.add(mesh(cyl(0.036, 0.036, 0.02, 'x', 24), std('#16181b', 0.2, 0.6), 0.905, 0.72, 1.12));
     A.led = mesh(new THREE.SphereGeometry(0.008, 10, 8), glow('#39d98a'), 0.92, 0.77, 1.12);
@@ -696,7 +708,7 @@ export function buildCar() {
       if (n.material) {
         const clone = (m) => {
           const c = m.clone();
-          p.mats.push({m: c, o: c.opacity, t: c.transparent, dw: c.depthWrite, e: c.emissive ? c.emissive.clone() : null, ei: c.emissiveIntensity ?? 0});
+          p.mats.push({m: c, o: c.opacity, t: c.transparent, dw: c.depthWrite, env: c.envMapIntensity ?? 1, e: c.emissive ? c.emissive.clone() : null, ei: c.emissiveIntensity ?? 0});
           return c;
         };
         n.material = Array.isArray(n.material) ? n.material.map(clone) : clone(n.material);
@@ -875,6 +887,12 @@ export function buildCar() {
     }
   };
 
+  // a film sets the running angles for its frame outright instead of integrating them, then calls update(o, 0, pb)
+  const seek = (a) => {
+    Object.assign(S, a);
+    if (a.beads !== undefined) for (const c of A.cables) c.u = ((a.beads * (c.id === 'mot' ? 1.3 : 1)) % 1 + 1) % 1;
+  };
+
   // ============================================================ per-frame look: explode, fade, highlight
   const look = (dt, L) => {
     const kf = 1 - Math.exp(-dt / 0.2);
@@ -907,7 +925,7 @@ export function buildCar() {
           m.needsUpdate = true;
         }
         m.depthWrite = r.dw && p.fade > 0.55;
-        if (m.envMapIntensity !== undefined) m.envMapIntensity = Math.sqrt(p.fade);
+        if (m.envMapIntensity !== undefined) m.envMapIntensity = r.env * Math.sqrt(p.fade);
         if (r.e && p.mats.length && m.emissive && !m.userData.keepEmissive && !r.m.isMeshBasicMaterial) {
           if (p.id !== 'gearbox' || !r.m.userData.el) {
             if (p.hl > 0.01) {
@@ -933,5 +951,5 @@ export function buildCar() {
   // where a part is right now (its centre plus the current explode offset)
   const anchorOf = (p, out = new V3()) => out.copy(p.center).add(p.obj.position);
 
-  return {root, parts, byId, pickables, update, look, anchorOf, SYSTEMS, A};
+  return {root, parts, byId, pickables, update, look, seek, anchorOf, SYSTEMS, A};
 }

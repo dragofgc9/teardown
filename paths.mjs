@@ -20,6 +20,8 @@ export const CHROMIUM = process.env.CHROMIUM || undefined;
 export const CHROMIUM_ARGS = [
   ...(process.platform === 'win32' ? ['--use-angle=d3d11'] : []),
   '--force_high_performance_gpu', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--enable-webgl', '--hide-scrollbars',
+  // extra flags for this machine, e.g. CHROMIUM_FLAGS="--use-angle=swiftshader --enable-unsafe-swiftshader" where there is no GPU
+  ...(process.env.CHROMIUM_FLAGS ? process.env.CHROMIUM_FLAGS.split(/\s+/).filter(Boolean) : []),
 ];
 
 // Builds and renders land in ./teardown-out of the folder you run from.

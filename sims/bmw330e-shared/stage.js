@@ -56,7 +56,7 @@ export function createStage({canvas}) {
     scene.environmentIntensity = 0.95;
     pm.dispose();
   }
-  const sun = new THREE.DirectionalLight('#ffffff', 2.2);
+  const sun = new THREE.DirectionalLight('#ffffff', 1.7);
   sun.position.set(-3.2, 7, 4.5);
   sun.castShadow = true;
   Object.assign(sun.shadow.camera, {left: -4.2, right: 4.2, top: 4.2, bottom: -4.2, near: 1, far: 20});

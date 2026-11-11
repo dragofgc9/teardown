@@ -37,7 +37,7 @@ export const SYS_VIEW = {
   chassis: {tx: 0, ty: 0.4, tz: 0, az: 48, el: 24, d: 8.4},
 };
 // the order parts come off in DISASSEMBLE
-const ORDER = [
+export const ORDER = [
   'hood', 'trunk', 'roof', 'doorFL', 'doorFR', 'doorRL', 'doorRR', 'bumperF', 'bumperR',
   'seatFL', 'seatFR', 'seatR', 'dash', 'steer',
   'cover', 'valvetrain', 'head', 'intake', 'turbo', 'liners', 'rods', 'crank', 'pan', 'cooling',
