@@ -1,6 +1,13 @@
 // The OA-1K film, 20 s: a pass in flight, the aircraft comes apart system by system with each one lit and named,
 // then it rebuilds in reverse and flies out. render(t) is a pure function of t; the distance flown is tabulated at load.
 import * as THREE from 'three';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {GTAOPass} from 'three/addons/postprocessing/GTAOPass.js';
+import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
+import {Pass} from 'three/addons/postprocessing/Pass.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {ShaderPass} from 'three/addons/postprocessing/ShaderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
 import {runSim} from '../kit/runtime.js';
 import {clamp01, easeInOutCubic, easeOutCubic, lerp, rng, smooth} from '../kit/util.js';
 import {buildAircraft, DIM} from './airframe.js';
@@ -19,8 +26,30 @@ const SYSTEMS = [
   ['Mission systems', 'Radios · SATCOM · missile warning · chaff and flares'],
 ];
 const KT = 0.5144;
-const SUN = new THREE.Vector3(-0.45, 0.62, 0.64).normalize();
-const HAZE = new THREE.Color(0xc3d6e6), ZENITH = new THREE.Color(0x2c6cb4);
+// Golden hour: the sun sits 16 degrees up, ahead and to port, so it rakes along the airframe and backlights the haze.
+const SUN = new THREE.Vector3(-0.62, 0.28, 0.73).normalize();
+const HAZE = new THREE.Color(0xd6cbbd), ZENITH = new THREE.Color(0x2d5f9e);
+
+// The grade: filmic contrast, warm highlights against teal shadows, a little halation at the edges, vignette, grain.
+const GRADE = {
+  uniforms: {tDiffuse: {value: null}, time: {value: 0}, aspect: {value: 16 / 9}},
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: `varying vec2 vUv; uniform sampler2D tDiffuse; uniform float time, aspect;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main(){
+      vec2 c = vUv - 0.5; float r2 = dot(c * vec2(1.0, 1.0 / aspect) * 1.25, c * vec2(1.0, 1.0 / aspect) * 1.25) * 3.2;
+      vec2 off = c * 0.0022 * (0.3 + r2);
+      vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+      col = max(col, vec3(0.0));
+      float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col = mix(col, col * vec3(0.9, 1.0, 1.08), (1.0 - smoothstep(0.0, 0.35, l)) * 0.35);
+      col = mix(col, col * vec3(1.07, 1.01, 0.92), smoothstep(0.3, 1.0, l) * 0.5);
+      col = mix(vec3(l), col, 1.04);
+      col = col * col * (3.0 - 2.0 * col) * 0.55 + col * 0.45;
+      col *= 1.0 - 0.36 * smoothstep(0.25, 1.15, r2);
+      col += (h(vUv * vec2(1920.0, 1080.0) + fract(time * 7.13) * 91.7) - 0.5) * 0.028;
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0); }`,
+};
 
 const canvasTex = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; };
 
@@ -33,7 +62,8 @@ function skyMesh() {
       void main(){ vec3 n = normalize(d); float h = clamp(n.y, 0.0, 1.0);
         vec3 c = mix(haze, zen, pow(h, 0.55));
         float s = max(dot(n, sun), 0.0);
-        c += vec3(1.0, 0.93, 0.8) * (pow(s, 600.0) * 4.0 + pow(s, 24.0) * 0.22 + pow(s, 4.0) * 0.08);
+        c = mix(c, vec3(1.0, 0.8, 0.56), pow(1.0 - h, 7.0) * (0.15 + 0.6 * pow(s, 3.0)));
+        c += vec3(1.0, 0.86, 0.62) * (pow(s, 900.0) * 9.0 + pow(s, 40.0) * 0.5 + pow(s, 5.0) * 0.22);
         if (n.y < 0.0) c = mix(haze, haze * 0.92, clamp(-n.y * 3.0, 0.0, 1.0));
         gl_FragColor = vec4(c, 1.0); }`,
   }));
@@ -77,28 +107,48 @@ function puffTex(seed) {
 export function run() {
   runSim(DEFAULTS, async ({canvas}) => {
     const renderer = new THREE.WebGLRenderer({canvas, antialias: true, preserveDrawingBuffer: true});
-    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.08;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(HAZE, 0.000115);
-    const camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.3, 90000);
+    scene.fog = new THREE.FogExp2(HAZE, 0.000085);
+    const camera = new THREE.PerspectiveCamera(30, 16 / 9, 1, 90000);
 
-    scene.add(skyMesh());
+    const sky = skyMesh(); scene.add(sky);
     const gt = groundTex(71); gt.wrapS = gt.wrapT = THREE.RepeatWrapping; gt.repeat.set(28, 28); gt.anisotropy = 8;
     const TILE = 3600, ALT = 1250;
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(TILE * 28, TILE * 28), new THREE.MeshStandardMaterial({map: gt, roughness: 1, metalness: 0}));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -ALT; scene.add(ground);
 
     // reflections come from the same sky the aircraft flies in
-    const envScene = new THREE.Scene(); envScene.add(skyMesh());
+    const envScene = new THREE.Scene(); const envSky = skyMesh(); envSky.material.uniforms.zen = {value: new THREE.Color(0x7f93ad)}; envScene.add(envSky);
     const eg = new THREE.Mesh(new THREE.CircleGeometry(40000, 24), new THREE.MeshBasicMaterial({color: 0x6f7a4c})); eg.rotation.x = -Math.PI / 2; eg.position.y = -800; envScene.add(eg);
     const pm = new THREE.PMREMGenerator(renderer);
-    scene.environment = pm.fromScene(envScene, 0, 1, 80000).texture; scene.environmentIntensity = 0.9;
-    const sun = new THREE.DirectionalLight(0xfff2de, 3.1);
-    sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+    scene.environment = pm.fromScene(envScene, 0, 1, 80000).texture; scene.environmentIntensity = 0.55;
+    const sun = new THREE.DirectionalLight(0xffd3a4, 4.2);
+    sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 3;
     Object.assign(sun.shadow.camera, {left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 120});
     sun.shadow.bias = -0.0015; sun.shadow.normalBias = 0.09;
-    scene.add(sun, sun.target, new THREE.HemisphereLight(0xbfd8f5, 0x69704e, 0.75));
+    const rim = new THREE.DirectionalLight(0xd0dcef, 0.45); rim.position.set(30, 18, -34);
+    scene.add(sun, sun.target, rim, new THREE.HemisphereLight(0xbccadc, 0x6b6048, 0.5));
+
+    // post: ambient occlusion on the aircraft only, bloom off the sun and the lit parts, then the grade
+    const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, {type: THREE.HalfFloatType, samples: 4}));
+    composer.addPass(new RenderPass(scene, camera));
+    const gtao = new GTAOPass(scene, camera, 4, 4);
+    gtao.output = GTAOPass.OUTPUT.Default; gtao.blendIntensity = 0.85;
+    gtao.updateGtaoMaterial({radius: 0.55, distanceExponent: 1.3, thickness: 1.0, scale: 1.1, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false});
+    gtao.updatePdMaterial({lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16});
+    class Toggle extends Pass { constructor(fn) { super(); this.needsSwap = false; this.fn = fn; } render() { this.fn(); } }
+    const backdrop = [];
+    const showBackdrop = (v) => () => { for (const o of backdrop) o.visible = v; };
+    composer.addPass(new Toggle(showBackdrop(false)));
+    composer.addPass(gtao);
+    composer.addPass(new Toggle(showBackdrop(true)));
+    const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.42, 0.75, 0.9);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    const grade = new ShaderPass(GRADE); composer.addPass(grade);
+    backdrop.push(sky, ground);
 
     // clouds: positions wrap along the flight path, so they are a function of distance flown
     const r = rng(1962);
@@ -106,7 +156,7 @@ export function run() {
     const clouds = [];
     const addCloud = (L, x, y, z, s, op) => {
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: puffs[Math.floor(r() * 4)], transparent: true, depthWrite: false, opacity: op, fog: true}));
-      sp.scale.set(s, s * 0.62, 1); sp.userData = {L, x, y, z}; scene.add(sp); clouds.push(sp);
+      sp.material.color.setRGB(1.0, 0.92 + 0.05 * r(), 0.84 + 0.08 * r()); sp.scale.set(s, s * 0.62, 1); sp.userData = {L, x, y, z}; scene.add(sp); clouds.push(sp); backdrop.push(sp);
     };
     for (let i = 0; i < 16; i++) { const side = r() > 0.5 ? 1 : -1; addCloud(2800, r() * 2800, lerp(-140, 60, r()), side * lerp(110, 520, r()), lerp(90, 220, r()), 0.85); }
     for (let i = 0; i < 46; i++) addCloud(9000, r() * 9000, lerp(-640, -360, r()), lerp(-4200, 4200, r()), lerp(380, 1100, r()), 0.62);
@@ -124,7 +174,7 @@ export function run() {
     bladeMat.transparent = true;
     const discTex = canvasTex(256, 256, (g) => { const gr = g.createRadialGradient(128, 128, 14, 128, 128, 128); gr.addColorStop(0, 'rgba(30,32,34,0)'); gr.addColorStop(0.16, 'rgba(20,22,24,0.34)'); gr.addColorStop(0.6, 'rgba(20,22,24,0.16)'); gr.addColorStop(0.93, 'rgba(20,22,24,0.13)'); gr.addColorStop(0.96, 'rgba(230,200,60,0.2)'); gr.addColorStop(1, 'rgba(40,42,44,0)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 256); });
     const disc = new THREE.Mesh(new THREE.CircleGeometry(DIM.propDia / 2, 48), new THREE.MeshBasicMaterial({map: discTex, transparent: true, depthWrite: false, side: THREE.DoubleSide}));
-    disc.rotation.y = Math.PI / 2; disc.position.x = -0.05; prop.holder.add(disc);
+    disc.rotation.y = Math.PI / 2; disc.position.x = -0.05; prop.holder.add(disc); backdrop.push(disc);
 
     // tables over time: how hard the aircraft is "live" (1 flying, 0 held for the teardown), distance flown, prop angle
     const N = Math.round(T.end * 240) + 1;
@@ -201,12 +251,14 @@ export function run() {
       dots.forEach((el, i) => el.classList.toggle('on', i === sysNow));
       ov.querySelector('.of-dots').style.opacity = sysNow >= 0 ? 1 : 0;
 
-      renderer.render(scene, camera);
+      grade.uniforms.time.value = t; grade.uniforms.aspect.value = camera.aspect;
+      composer.render();
       return {};
     }
     function resize() {
       const w = canvas.clientWidth || innerWidth, h = canvas.clientHeight || innerHeight;
       renderer.setPixelRatio(window.devicePixelRatio || 1); renderer.setSize(w, h, false);
+      composer.setPixelRatio(window.devicePixelRatio || 1); composer.setSize(w, h);
       camera.aspect = w / h; camera.updateProjectionMatrix();
     }
     resize();

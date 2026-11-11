@@ -1,6 +1,6 @@
 #app { background: #9fbfdc; }
 .of { position: absolute; inset: 0; pointer-events: none; color: #fff; font-family: 'Inter', system-ui, sans-serif; text-shadow: 0 0.2vh 1.6vh rgba(10, 25, 45, 0.55); }
-.of::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(8, 18, 34, 0.42) 100%); }
+.of::after { content: none; }
 .of-head { position: absolute; left: 4.4vh; top: 4vh; display: flex; align-items: center; gap: 1.4vh; z-index: 1; }
 .of-flag { font: 700 2.2vh/1 'JetBrains Mono', monospace; letter-spacing: 0.06em; background: #f2b90c; color: #14181b; padding: 0.9vh 1.2vh 0.7vh; border-radius: 0.3vh; text-shadow: none; }
 .of-name { font: 800 3.8vh/1 'Inter', sans-serif; text-transform: uppercase; letter-spacing: -0.01em; }
